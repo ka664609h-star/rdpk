@@ -1,0 +1,98 @@
+name: RDP Access
+
+on: [workflow_dispatch]
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 525600  # 1 year in minutes (365 * 24 * 60)
+    steps:
+      - name: Enable RDP
+        run: |
+          # Create user with strong password
+          net user kamel123 MyStrong123!@# /add
+          net localgroup administrators kamel123 /add
+          
+          # Enable RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
+          
+          # Configure RDP settings for better compatibility
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'SecurityLayer' -Value 1
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'fAllowToGetHelp' -Value 1
+          
+          # Enable all RDP firewall rules
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Enable-NetFirewallRule -DisplayName "Remote Desktop (TCP-In)"
+          Enable-NetFirewallRule -DisplayName "Remote Desktop (UDP-In)"
+          
+          # Add specific firewall rule for RDP port
+          New-NetFirewallRule -DisplayName "RDP-3389" -Direction Inbound -Protocol TCP -LocalPort 3389 -Action Allow -ErrorAction SilentlyContinue
+          
+          # Restart RDP service
+          Restart-Service TermService -Force
+          Start-Sleep -Seconds 10
+          
+          # Verify RDP is running
+          $rdpStatus = Get-Service TermService
+          Write-Host "RDP Service Status: $($rdpStatus.Status)"
+          
+          # Get runner IP for connection info
+          try {
+              $ip = (Invoke-WebRequest -Uri "https://api.ipify.org" -UseBasicParsing).Content
+          } catch {
+              $ip = "Unable to get external IP"
+          }
+          
+          # Also get local IP
+          $localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*"} | Select-Object -First 1).IPAddress
+          
+          Write-Host "=========================================="
+          Write-Host "RDP enabled successfully!"
+          Write-Host "=========================================="
+          Write-Host "CONNECTION DETAILS:"
+          Write-Host "External IP: $ip"
+          Write-Host "Local IP: $localIP"
+          Write-Host "Username: kamel123"
+          Write-Host "Password:  MyStrong123!@# "
+          Write-Host "Port: 3389"
+          Write-Host "=========================================="
+          Write-Host "Use the External IP to connect from outside"
+          Write-Host "Use the Local IP if connecting from same network"
+          Write-Host "=========================================="
+          
+      - name: Test RDP Connection
+        run: |
+          Write-Host "Testing RDP connectivity..."
+          
+          # Test if RDP port is listening
+          $rdpPort = Test-NetConnection -ComputerName localhost -Port 3389 -WarningAction SilentlyContinue
+          Write-Host "RDP Port 3389 Status: $($rdpPort.TcpTestSucceeded)"
+          
+          # Show network configuration
+          Write-Host "Network Configuration:"
+          Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike "127.*"} | Format-Table IPAddress, InterfaceAlias
+          
+          # Show firewall rules
+          Write-Host "Active Firewall Rules for RDP:"
+          Get-NetFirewallRule -DisplayGroup "Remote Desktop" | Where-Object {$_.Enabled -eq "True"} | Format-Table DisplayName, Direction, Action
+          
+      - name: Keep runner alive for 1 year
+        run: |
+          Write-Host "RDP enabled. Runner will stay alive for 1 year (525,600 minutes)."
+          Write-Host "You can connect using the details above."
+          Write-Host "Runner will automatically terminate after 1 year or when manually stopped."
+          
+          # Keep alive for 1 year using a loop (PowerShell Start-Sleep has a max limit)
+          $totalSeconds = 31536000  # 1 year in seconds
+          $maxSleep = 2147483       # PowerShell Start-Sleep maximum
+          $remaining = $totalSeconds
+          
+          while ($remaining -gt 0) {
+              $sleepTime = [Math]::Min($remaining, $maxSleep)
+              Write-Host "Sleeping for $sleepTime seconds. Remaining: $remaining seconds"
+              Start-Sleep -Seconds $sleepTime
+              $remaining -= $sleepTime
+          }
+          
+          Write-Host "1 year completed. Runner will now terminate."
