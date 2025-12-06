@@ -23,7 +23,7 @@ jobs:
           
           # Enable all RDP firewall rules
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Enable-NetFirewallRule -DisplayName "Remote Desktop (TCP-In)"
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop (TCP-In)"
           Enable-NetFirewallRule -DisplayName "Remote Desktop (UDP-In)"
           
           # Add specific firewall rule for RDP port
